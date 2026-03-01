@@ -1,0 +1,64 @@
+# Benchmark query set for FuzzyFST comparison benchmarks.
+# 50 queries in 5 categories, 10 each.
+# Format: one query per line. Lines starting with # are comments.
+
+# Category 1: Real English words with ONE character changed
+# (substitution, insertion, or deletion of a single character)
+algoritm
+definately
+occured
+seperate
+recieve
+accomodate
+goverment
+enviroment
+necesary
+developement
+
+# Category 2: Real English words with TWO characters changed
+algritm
+defnately
+ocured
+seprate
+receve
+acomodate
+govrnment
+envroment
+necesry
+devlopment
+
+# Category 3: Real English words with THREE characters changed
+algrtm
+defnatly
+ocred
+sepate
+recve
+acomodte
+govrment
+envrment
+necery
+devlpment
+
+# Category 4: Completely misspelled common words
+teh
+wiht
+abuot
+becuase
+freind
+langauge
+libary
+mispell
+occassion
+restarant
+
+# Category 5: Words not in the dictionary (invented/rare)
+xyloquartz
+brontoflex
+quasimorph
+hypervolt
+neuroflux
+cryptoplasm
+megasphere
+ultraquench
+photonweb
+gravitrex

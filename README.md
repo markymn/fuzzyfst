@@ -84,6 +84,34 @@ Raw dictionary text: ~3.5 MB. The minimized FST achieves ~1.7x compression via s
 
 With `-O3 -march=native`: ~22 ns/node (48 us/query avg at d=1, 437 us/query avg at d=2 over 998 queries).
 
+### Comparison: FuzzyFST vs SymSpell vs Brute Force
+
+All three methods tested on the same 370,105-word dictionary and the same 50 queries at edit distances 1, 2, and 3. Queries span five categories: 1-char typos, 2-char typos, 3-char typos, common misspellings, and words not in dictionary. Full query set in [data/benchmark_queries.txt](data/benchmark_queries.txt).
+
+**Hardware:** Intel i5-9600K @ 3.70 GHz, 6 cores, 8 GB RAM, Windows 11, GCC 13.2, `-O3`.
+
+| Metric | FuzzyFST | SymSpell | Brute Force |
+|--------|----------|----------|-------------|
+| Index size | 1.9 MB | 215 / 593 / 1,110 MB (d=1/2/3) | 0 (no index) |
+| Build time | 95 ms | 1,459 / 4,384 / 8,296 ms (d=1/2/3) | 0 ms |
+| Avg latency d=1 | 52 µs | 11 µs | 81,179 µs |
+| Avg latency d=2 | 431 µs | 155 µs | 78,973 µs |
+| Avg latency d=3 | 2,023 µs | 2,348 µs | 79,273 µs |
+| P99 latency d=1 | 75 µs | 34 µs | 98,008 µs |
+| P99 latency d=2 | 589 µs | 416 µs | 97,235 µs |
+| P99 latency d=3 | 2,583 µs | 5,979 µs | 94,562 µs |
+| Avg results d=1 | 1.9 | 1.9 | 1.9 |
+| Avg results d=2 | 39.2 | 39.2 | 39.2 |
+| Avg results d=3 | 471.9 | 471.9 | 471.9 |
+
+**SymSpell** uses the symmetric delete algorithm: it precomputes all deletion variants up to max edit distance at build time, trading memory for query speed. At d=1 and d=2, SymSpell is 3-5x faster than FuzzyFST because its lookups are hash table probes with no graph traversal. However, this comes at massive memory cost: 215 MB at d=1 (113x FuzzyFST), 593 MB at d=2 (312x), and 1.1 GB at d=3 (584x). Build times are 15-87x slower. At d=3, SymSpell's query speed advantage disappears entirely — FuzzyFST is faster on average and has 2.3x better P99 — because the deletion variant space explodes combinatorially.
+
+**FuzzyFST** stores the entire dictionary in a 1.9 MB minimized FST that can be memory-mapped from disk. Query speed scales with edit distance (more nodes to traverse) but memory usage is constant regardless of the edit distance used at query time. Build time is 95 ms — a single build supports all edit distances.
+
+**Brute force** computes Levenshtein distance against every dictionary word. At ~80 ms per query, it is 1,500x slower than FuzzyFST at d=1 and 39x slower at d=3. Its latency is nearly constant across distances because it always scans the full dictionary.
+
+**Distance 3** is supported but produces ~472 results on average per query. At this distance, the result set is large enough that downstream ranking/filtering becomes the bottleneck rather than the search itself.
+
 ## Algorithm
 
 The query engine intersects a Levenshtein NFA with the FST via iterative DFS. At each FST node, Myers' bit-parallel algorithm advances the NFA state in O(1) using two 64-bit bitvectors (Pv, Mv) that encode the entire DP column implicitly. The pruning function `can_match()` reconstructs the column minimum from these bitvectors and prunes subtrees where no extension can yield a match.
