@@ -1,0 +1,8 @@
+build/
+build_dbg/
+gmon.out
+out.txt
+test_roundtrip.fst
+*.exe
+*.o
+*.obj
