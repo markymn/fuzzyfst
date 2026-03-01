@@ -152,8 +152,8 @@ struct FstQueryResult {
     double latency_us;
 };
 
-static fuzzyfst::FuzzyResult s_results[16384];
-static char s_word_buf[262144];
+static fuzzyfst::FuzzyResult s_results[65536];
+static char s_word_buf[1048576];
 
 static FstQueryResult fst_query(const FstReader& reader,
                                  std::string_view query,
@@ -164,9 +164,9 @@ static FstQueryResult fst_query(const FstReader& reader,
 
     auto t0 = Clock::now();
     FuzzyIterator iter(reader, nfa, s_word_buf, sizeof(s_word_buf),
-                       s_results, 16384);
+                       s_results, 65536);
     size_t count = 0;
-    while (!iter.done() && count < 16384) {
+    while (!iter.done() && count < 65536) {
         count += iter.collect();
     }
     auto t1 = Clock::now();
@@ -241,7 +241,8 @@ int main() {
     std::printf("BruteForce: no index (linear scan)\n");
 
     // ── Query phase ──────────────────────────────────────────
-    uint32_t distances[] = {1, 2, 3};
+    uint32_t distances[] = {1, 2, 3, 4};
+    constexpr int NDIST = 4;
     size_t nq = queries.size();
 
     struct DistStats {
@@ -250,11 +251,11 @@ int main() {
         double avg_results;
     };
 
-    DistStats fst_stats[3], sym_stats[3], bf_stats[3];
-    double sym_build_ms[3] = {};
-    size_t sym_memory[3] = {};
+    DistStats fst_stats[NDIST], sym_stats[NDIST], bf_stats[NDIST];
+    double sym_build_ms[NDIST] = {};
+    size_t sym_memory[NDIST] = {};
 
-    for (int di = 0; di < 3; ++di) {
+    for (int di = 0; di < NDIST; ++di) {
         uint32_t d = distances[di];
         std::printf("\n=== DISTANCE %u ===\n", d);
 
@@ -319,22 +320,23 @@ int main() {
 
     std::printf("| Metric | FuzzyFST | SymSpell | Brute Force |\n");
     std::printf("|--------|----------|----------|-------------|\n");
-    std::printf("| Index size | %.1f MB | %.0f / %.0f / %.0f MB (d=1/2/3) | 0 (no index) |\n",
+    std::printf("| Index size | %.1f MB | %.0f / %.0f / %.0f / %.0f MB (d=1/2/3/4) | 0 (no index) |\n",
                 fst_bytes / (1024.0 * 1024.0),
                 sym_memory[0] / (1024.0 * 1024.0),
                 sym_memory[1] / (1024.0 * 1024.0),
-                sym_memory[2] / (1024.0 * 1024.0));
-    std::printf("| Build time | %.0f ms | %.0f / %.0f / %.0f ms (d=1/2/3) | 0 ms |\n",
-                fst_build_ms, sym_build_ms[0], sym_build_ms[1], sym_build_ms[2]);
-    for (int di = 0; di < 3; ++di) {
+                sym_memory[2] / (1024.0 * 1024.0),
+                sym_memory[3] / (1024.0 * 1024.0));
+    std::printf("| Build time | %.0f ms | %.0f / %.0f / %.0f / %.0f ms (d=1/2/3/4) | 0 ms |\n",
+                fst_build_ms, sym_build_ms[0], sym_build_ms[1], sym_build_ms[2], sym_build_ms[3]);
+    for (int di = 0; di < NDIST; ++di) {
         std::printf("| Avg latency d=%d | %.0f us | %.0f us | %.0f us |\n",
                     di + 1, fst_stats[di].avg_us, sym_stats[di].avg_us, bf_stats[di].avg_us);
     }
-    for (int di = 0; di < 3; ++di) {
+    for (int di = 0; di < NDIST; ++di) {
         std::printf("| P99 latency d=%d | %.0f us | %.0f us | %.0f us |\n",
                     di + 1, fst_stats[di].p99_us, sym_stats[di].p99_us, bf_stats[di].p99_us);
     }
-    for (int di = 0; di < 3; ++di) {
+    for (int di = 0; di < NDIST; ++di) {
         std::printf("| Avg results d=%d | %.1f | %.1f | %.1f |\n",
                     di + 1, fst_stats[di].avg_results, sym_stats[di].avg_results, bf_stats[di].avg_results);
     }
