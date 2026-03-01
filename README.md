@@ -5,13 +5,20 @@ Minimal acyclic finite state transducer (FST) with sub-millisecond fuzzy search 
 ## Building
 
 ```bash
-cmake -B build
+# GCC / MinGW
+cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ./build/fst-tests    # Run tests (49 tests including 370K-word oracle)
 ./build/fst-cli      # CLI tool
+
+# MSVC (Visual Studio)
+cmake -B build
+cmake --build build --config Release
+./build/Release/fst-tests
+./build/Release/fst-cli
 ```
 
-Requires C++23 (GCC 13+ or Clang 17+).
+Requires C++23 (GCC 13+, Clang 17+, or MSVC 17.10+).
 
 ## Usage
 
@@ -56,39 +63,31 @@ for (auto& m : matches)
 
 ## Benchmarks
 
-Measured on 370,105-word English dictionary ([dwyl/english-words](https://github.com/dwyl/english-words)), Windows 11, GCC 13.2, default build (no `-O3`):
+Measured on 370,105-word English dictionary ([dwyl/english-words](https://github.com/dwyl/english-words)). Hardware: Intel i5-9600K @ 3.70 GHz, 6 cores, 8 GB RAM, Windows 11, GCC 13.2, `-O3`.
 
 ### Build
 
 | Metric | Value |
 |--------|-------|
-| Total build time | 471 ms |
-| Radix sort | 60 ms (13%) |
-| Trie construction (Daciuk) | 335 ms (72%) |
-| Serialization | 64 ms (14%) |
-| FST file size | 2.0 MB (5.5 bytes/word) |
+| Total build time | 95 ms |
+| FST file size | 1.9 MB (5.5 bytes/word) |
 | Unique FST nodes | 160,303 |
 
 Raw dictionary text: ~3.5 MB. The minimized FST achieves ~1.7x compression via shared suffix elimination.
 
 ### Query
 
-| Query | Distance | Results | Latency |
-|-------|----------|---------|---------|
-| `"test"` | 1 | 31 | 91 us |
-| `"helo"` | 1 | 16 | 91 us |
-| `"algoritm"` | 1 | 2 | 148 us |
-| `"cat"` | 2 | 1,108 | 694 us |
-| `"algoritm"` | 2 | 8 | 1,404 us |
-| `"search"` | 2 | 87 | 1,120 us |
+Per-node cost: ~22 ns. Average over 50 queries per distance:
 
-With `-O3 -march=native`: ~22 ns/node (48 us/query avg at d=1, 437 us/query avg at d=2 over 998 queries).
+| Distance | Avg latency | P99 latency | Avg results |
+|----------|-------------|-------------|-------------|
+| d=1 | 52 µs | 75 µs | 1.9 |
+| d=2 | 431 µs | 589 µs | 39.2 |
+| d=3 | 2,023 µs | 2,583 µs | 471.9 |
 
 ### Comparison: FuzzyFST vs SymSpell vs Brute Force
 
-All three methods tested on the same 370,105-word dictionary and the same 50 queries at edit distances 1, 2, and 3. Queries span five categories: 1-char typos, 2-char typos, 3-char typos, common misspellings, and words not in dictionary. Full query set in [data/benchmark_queries.txt](data/benchmark_queries.txt).
-
-**Hardware:** Intel i5-9600K @ 3.70 GHz, 6 cores, 8 GB RAM, Windows 11, GCC 13.2, `-O3`.
+All three methods tested on the same 370,105-word dictionary and the same 50 queries at edit distances 1, 2, and 3. Queries span five categories: 1-char typos, 2-char typos, 3-char typos, common misspellings, and words not in dictionary. Full query set in [data/benchmark_queries.txt](data/benchmark_queries.txt). Same hardware and compiler as above.
 
 | Metric | FuzzyFST | SymSpell | Brute Force |
 |--------|----------|----------|-------------|

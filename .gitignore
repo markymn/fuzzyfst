@@ -1,8 +1,10 @@
 build/
-build_dbg/
+build_*/
 gmon.out
 out.txt
 test_roundtrip.fst
 *.exe
 *.o
 *.obj
+*.fst
+plan.md

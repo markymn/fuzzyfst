@@ -55,5 +55,5 @@ target_include_directories(fst-profile PRIVATE src)
 # Word list check
 if(NOT EXISTS "${CMAKE_SOURCE_DIR}/data/words.txt")
     message(WARNING "data/words.txt not found. Tests and benchmarks require a word list. "
-                    "See implementation_plan.md section 8 for acquisition instructions.")
+                    "See https://github.com/dwyl/english-words for the 370K-word dictionary.")
 endif()
