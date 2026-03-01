@@ -69,7 +69,7 @@ Measured on 370,105-word English dictionary ([dwyl/english-words](https://github
 
 | Metric | Value |
 |--------|-------|
-| Total build time | 95 ms |
+| Total build time | 93 ms |
 | FST file size | 1.9 MB (5.5 bytes/word) |
 | Unique FST nodes | 160,303 |
 
@@ -105,7 +105,9 @@ All three methods tested on the same 370,105-word dictionary and the same 50 que
 | Avg results d=1 | 1.9 | 1.9 | 1.9 |
 | Avg results d=2 | 39.2 | 39.2 | 39.2 |
 | Avg results d=3 | 471.9 | 471.9 | 471.9 |
-| Avg results d=4 | 3,320.4 | 3,221.4 | 3,320.4 |
+| Avg results d=4 | 3,320.4 | 3,221.4* | 3,320.4 |
+
+\* SymSpell uses Damerau-Levenshtein distance (transpositions count as one edit), while FuzzyFST and brute force use pure Levenshtein distance. At d=1-3 the result counts agree because transpositions are rare in this query set. At d=4, the small difference (~3%) reflects words where a transposition changes which side of the distance boundary they fall on.
 
 **SymSpell** uses the symmetric delete algorithm: it precomputes all deletion variants up to max edit distance at build time, trading memory for query speed. At d=1 and d=2, SymSpell is 3-5x faster than FuzzyFST because its lookups are hash table probes with no graph traversal. However, this comes at massive memory cost: 215 MB at d=1 (113x FuzzyFST), 593 MB at d=2 (312x), 1.1 GB at d=3 (584x), and 2.5 GB at d=4 (1,334x). Build times are 14-241x slower. At d=3, SymSpell's query speed advantage disappears — FuzzyFST matches it on average latency with 1.9x better P99. At d=4, FuzzyFST is 2x faster on average and has 3.5x better P99, because the deletion variant space explodes combinatorially.
 
@@ -113,7 +115,7 @@ All three methods tested on the same 370,105-word dictionary and the same 50 que
 
 **Brute force** computes Levenshtein distance against every dictionary word. At ~75 ms per query, it is 1,400x slower than FuzzyFST at d=1 and 13x slower at d=4. Its latency is nearly constant across distances because it always scans the full dictionary.
 
-**Distance 3+** is supported but produces increasingly large result sets (~472 at d=3, ~3,320 at d=4). At these distances, downstream ranking/filtering becomes the bottleneck rather than the search itself.
+**Distance 3+** is supported but produces increasingly large result sets (~472 at d=3, ~3,320 at d=4). FuzzyFST is a candidate generation library — it returns all dictionary words within the specified edit distance. Ranking results by likelihood or relevance is left to the caller. At higher distances, downstream ranking becomes the bottleneck rather than the search itself.
 
 ## Algorithm
 
