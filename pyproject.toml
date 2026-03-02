@@ -1,0 +1,16 @@
+[build-system]
+requires = ["scikit-build-core>=0.10", "nanobind>=2.0"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "fuzzyfst"
+version = "0.1.0"
+description = "Fast fuzzy string search using finite state transducers"
+requires-python = ">=3.9"
+
+[project.optional-dependencies]
+test = ["pytest>=7.0"]
+
+[tool.scikit-build]
+cmake.args = ["-DFUZZYFST_PYTHON=ON"]
+wheel.packages = ["python/fuzzyfst"]

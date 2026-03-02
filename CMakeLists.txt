@@ -57,3 +57,19 @@ if(NOT EXISTS "${CMAKE_SOURCE_DIR}/data/words.txt")
     message(WARNING "data/words.txt not found. Tests and benchmarks require a word list. "
                     "See https://github.com/dwyl/english-words for the 370K-word dictionary.")
 endif()
+
+# Python bindings (optional, enabled by scikit-build-core during pip install)
+option(FUZZYFST_PYTHON "Build Python bindings" OFF)
+
+if(FUZZYFST_PYTHON)
+    find_package(Python COMPONENTS Interpreter Development.Module REQUIRED)
+    find_package(nanobind CONFIG REQUIRED)
+
+    nanobind_add_module(_fuzzyfst python/bindings.cpp)
+    target_link_libraries(_fuzzyfst PRIVATE fuzzyfst)
+    # _fuzzyfst compiles with RTTI (nanobind requires it).
+    # The fuzzyfst library uses -fno-rtti (PRIVATE), so no conflict —
+    # Pimpl ensures no RTTI-dependent types cross the boundary.
+
+    install(TARGETS _fuzzyfst LIBRARY DESTINATION fuzzyfst)
+endif()
