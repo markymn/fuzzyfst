@@ -24,7 +24,12 @@ add_library(fuzzyfst
 )
 target_include_directories(fuzzyfst PUBLIC include)
 target_include_directories(fuzzyfst PRIVATE src)
-target_compile_options(fuzzyfst PRIVATE -fno-rtti)
+if(MSVC)
+    target_compile_options(fuzzyfst PRIVATE /GR-)
+else()
+    target_compile_options(fuzzyfst PRIVATE -fno-rtti)
+endif()
+set_target_properties(fuzzyfst PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # CLI
 add_executable(fst-cli cli/main.cpp)

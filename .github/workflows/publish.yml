@@ -33,6 +33,11 @@ jobs:
             PATH=/opt/rh/gcc-toolset-13/root/usr/bin:$PATH
             CC=/opt/rh/gcc-toolset-13/root/usr/bin/gcc
             CXX=/opt/rh/gcc-toolset-13/root/usr/bin/g++
+            CFLAGS=-fPIC
+            CXXFLAGS=-fPIC
+          # macOS needs 10.14+ for C++17 aligned deallocation (used by nanobind).
+          CIBW_ENVIRONMENT_MACOS: >
+            MACOSX_DEPLOYMENT_TARGET=10.14
 
       - uses: actions/upload-artifact@v4
         with:
