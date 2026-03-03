@@ -63,8 +63,25 @@ NB_MODULE(_fuzzyfst, m) {
 
         .def("fuzzy_search", [](const fuzzyfst::Fst& self,
                                  const std::string& query,
-                                 uint32_t max_distance) {
-            auto results = self.fuzzy_search(query, max_distance);
+                                 uint32_t max_distance,
+                                 const std::string& metric,
+                                 const std::string& algorithm) {
+            fuzzyfst::DistanceMetric dm = fuzzyfst::DistanceMetric::Levenshtein;
+            if (metric == "damerau") {
+                dm = fuzzyfst::DistanceMetric::DamerauLevenshtein;
+            } else if (metric != "levenshtein") {
+                throw nb::value_error("metric must be 'levenshtein' or 'damerau'");
+            }
+
+            fuzzyfst::Algorithm algo = fuzzyfst::Algorithm::BitParallel;
+            if (algorithm == "dfa") {
+                algo = fuzzyfst::Algorithm::DFA;
+            } else if (algorithm != "bit-parallel") {
+                throw nb::value_error("algorithm must be 'bit-parallel' or 'dfa'");
+            }
+
+            fuzzyfst::SearchOptions opts{max_distance, dm, algo};
+            auto results = self.fuzzy_search(query, opts);
 
             // Copy string_view data into Python strings immediately.
             // The C++ convenience overload uses a thread_local buffer
@@ -79,7 +96,11 @@ NB_MODULE(_fuzzyfst, m) {
             return py_results;
         },
         nb::arg("query"), nb::arg("max_distance") = 1,
+        nb::arg("metric") = "levenshtein",
+        nb::arg("algorithm") = "bit-parallel",
         "Find all words within max_distance edits of query.\n"
+        "metric: 'levenshtein' (default) or 'damerau' for Damerau-Levenshtein.\n"
+        "algorithm: 'bit-parallel' (default) or 'dfa' for compiled DFA.\n"
         "Returns list of (word, distance) tuples.")
 
         .def_prop_ro("num_nodes", &fuzzyfst::Fst::num_nodes,

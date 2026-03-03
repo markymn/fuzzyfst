@@ -33,6 +33,13 @@ results = fst.fuzzy_search("algoritm", 1)
 # Higher edit distance finds more results.
 results = fst.fuzzy_search("car", 2)
 # [("car", 0), ("card", 1), ("cart", 1), ("cat", 1)]
+
+# Compiled DFA — faster traversal, higher startup cost.
+results = fst.fuzzy_search("algoritm", 2, algorithm="dfa")
+
+# Damerau-Levenshtein: transpositions count as one edit.
+results = fst.fuzzy_search("teh", 1, metric="damerau")
+# Finds "the" at distance 1 (transposition).
 ```
 
 ## Use cases
@@ -61,10 +68,12 @@ Open a previously-built FST file. The file is memory-mapped for zero-copy access
 
 Exact membership test. O(key length), independent of dictionary size.
 
-### `fst.fuzzy_search(query, max_distance=1) -> list[tuple[str, int]]`
+### `fst.fuzzy_search(query, max_distance=1, metric="levenshtein", algorithm="bit-parallel") -> list[tuple[str, int]]`
 
-Find all words within `max_distance` Levenshtein edits of `query`. Returns a list of `(word, distance)` tuples.
+Find all words within `max_distance` edits of `query`. Returns a list of `(word, distance)` tuples.
 
+- `metric` — `"levenshtein"` (default) or `"damerau"` for Damerau-Levenshtein (transpositions count as one edit).
+- `algorithm` — `"bit-parallel"` (default, zero startup) or `"dfa"` (compiled DFA, faster traversal but higher startup cost).
 - Max query length: 64 characters.
 - Recommended max distance: 1-3. Distance 4+ works but produces large result sets.
 
@@ -76,17 +85,17 @@ Number of nodes in the FST (for diagnostics).
 
 Benchmarked on a 370,105-word English dictionary (Intel i5-9600K, GCC 13.2, -O3):
 
-| Distance | Avg latency | Avg results |
-|----------|-------------|-------------|
-| d=1 | 50 us | 1.9 |
-| d=2 | 415 us | 39.2 |
-| d=3 | 2,040 us | 471.9 |
+| Distance | Lev BitParallel | Lev DFA | Damerau DFA | Avg results |
+|----------|-----------------|---------|-------------|-------------|
+| d=1 | 53 us | 17 us | 21 us | 1.9 / 1.9 / 2.1 |
+| d=2 | 498 us | 168 us | 209 us | 39.2 / 39.2 / 40.9 |
+| d=3 | 2,525 us | 924 us | 989 us | 471.9 / 471.9 / 487.7 |
 
-Index size: 1.9 MB for 370K words. Build time: 93 ms.
+DFA modes add one-time compilation cost per (query, distance) pair: Lev DFA 135-1,200 us, Damerau DFA 1,447-13,648 us at d=1-3. Index size: 1.9 MB for 370K words. Build time: 93 ms.
 
 ## How it works
 
-FuzzyFST stores the dictionary in a minimized acyclic finite state transducer (FST). Fuzzy queries intersect a bit-parallel Levenshtein NFA with the FST using iterative DFS. Each FST node is processed in O(1) using Myers' algorithm with 64-bit bitvectors. Subtrees that cannot produce matches are pruned early.
+FuzzyFST stores the dictionary in a minimized acyclic finite state transducer (FST). Three search modes: **bit-parallel** (Myers' NFA, zero startup, ~12 bitwise ops per node), **Levenshtein DFA** (compiled DFA, O(1) table lookup, 3x faster traversal), and **Damerau DFA** (handles transpositions). Subtrees that cannot produce matches are pruned early.
 
 See [INTERNALS.md](https://github.com/markymn/fuzzyfst/blob/main/INTERNALS.md) for algorithm details.
 
