@@ -9,6 +9,13 @@
 #include "fst_reader.h"
 #include "levenshtein_nfa.h"
 #include "fuzzy_search.h"
+#include "damerau_nfa.h"
+#include "damerau_search.h"
+#include "levenshtein_dfa.h"
+#include "levenshtein_dfa_search.h"
+// Hyyro (Damerau BitParallel) not yet correct — fall back to DamerauDFA.
+// #include "hyyro_nfa.h"
+// #include "hyyro_search.h"
 
 #include <algorithm>
 #include <cassert>
@@ -150,6 +157,116 @@ std::vector<FuzzyResult> Fst::fuzzy_search(std::string_view query,
     }
 
     // Build result vector with string_views into the thread_local buffer.
+    std::vector<FuzzyResult> results;
+    results.reserve(offsets.size());
+    const char* base = word_backing.data();
+    for (size_t i = 0; i < offsets.size(); ++i) {
+        results.push_back({std::string_view(base + offsets[i].first,
+                                             offsets[i].second),
+                           distances[i]});
+    }
+    return results;
+}
+
+size_t Fst::fuzzy_search(std::string_view query,
+                          SearchOptions opts,
+                          std::span<FuzzyResult> results,
+                          std::span<char> word_buf) const {
+    // Default overloads (Levenshtein + BitParallel) — unchanged path.
+    if (opts.metric == DistanceMetric::Levenshtein &&
+        opts.algorithm == Algorithm::BitParallel) {
+        return fuzzy_search(query, opts.max_distance, results, word_buf);
+    }
+
+    assert(impl_);
+    if (query.size() > 64) return 0;
+
+    size_t total = 0;
+
+    if (opts.metric == DistanceMetric::Levenshtein &&
+        opts.algorithm == Algorithm::DFA) {
+        // Levenshtein DFA path.
+        internal::LevenshteinDFA dfa;
+        auto r = dfa.init(query, opts.max_distance);
+        if (!r.has_value()) return 0;
+
+        internal::LevenshteinDFAIterator iter(impl_->reader, dfa,
+                                               word_buf.data(), word_buf.size(),
+                                               results.data(), results.size());
+        while (!iter.done() && total < results.size()) {
+            total += iter.collect();
+        }
+    } else {
+        // Damerau DFA path — used for both DamerauLevenshtein algorithms.
+        // (BitParallel Hyyro not yet correct; falls back here.)
+        internal::DamerauNFA dfa;
+        auto r = dfa.init(query, opts.max_distance);
+        if (!r.has_value()) return 0;
+
+        internal::DamerauIterator iter(impl_->reader, dfa,
+                                        word_buf.data(), word_buf.size(),
+                                        results.data(), results.size());
+        while (!iter.done() && total < results.size()) {
+            total += iter.collect();
+        }
+    }
+
+    return total;
+}
+
+std::vector<FuzzyResult> Fst::fuzzy_search(std::string_view query,
+                                             SearchOptions opts) const {
+    // Default overloads (Levenshtein + BitParallel) — unchanged path.
+    if (opts.metric == DistanceMetric::Levenshtein &&
+        opts.algorithm == Algorithm::BitParallel) {
+        return fuzzy_search(query, opts.max_distance);
+    }
+
+    assert(impl_);
+    if (query.size() > 64) return {};
+
+    thread_local std::string word_backing;
+    word_backing.clear();
+
+    std::vector<char> word_buf(65536);
+    std::vector<FuzzyResult> result_buf(8192);
+    std::vector<std::pair<size_t, size_t>> offsets;
+    std::vector<uint32_t> distances;
+
+    // Collect results using a lambda to avoid duplicating the gather loop.
+    auto gather = [&](auto& iter) {
+        while (!iter.done()) {
+            size_t n = iter.collect();
+            for (size_t i = 0; i < n; ++i) {
+                offsets.push_back({word_backing.size(),
+                                   result_buf[i].word.size()});
+                word_backing.append(result_buf[i].word);
+                distances.push_back(result_buf[i].distance);
+            }
+        }
+    };
+
+    if (opts.metric == DistanceMetric::Levenshtein &&
+        opts.algorithm == Algorithm::DFA) {
+        internal::LevenshteinDFA dfa;
+        auto r = dfa.init(query, opts.max_distance);
+        if (!r.has_value()) return {};
+        internal::LevenshteinDFAIterator iter(impl_->reader, dfa,
+                                               word_buf.data(), word_buf.size(),
+                                               result_buf.data(), result_buf.size());
+        gather(iter);
+    } else {
+        // Damerau DFA — used for both DamerauLevenshtein algorithms.
+        // (BitParallel Hyyro not yet correct; falls back here.)
+        internal::DamerauNFA dfa;
+        auto r = dfa.init(query, opts.max_distance);
+        if (!r.has_value()) return {};
+        internal::DamerauIterator iter(impl_->reader, dfa,
+                                        word_buf.data(), word_buf.size(),
+                                        result_buf.data(), result_buf.size());
+        gather(iter);
+    }
+
     std::vector<FuzzyResult> results;
     results.reserve(offsets.size());
     const char* base = word_backing.data();

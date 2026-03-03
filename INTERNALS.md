@@ -120,3 +120,66 @@ The 2MB FST data does not fit in L1 (32-48 KB) or L2 (256-512 KB) but fits in L3
 The per-node cost is **nearly identical** at d=1 (22.2 ns) and d=2 (23.8 ns), a ratio of 1.07x. If L1/L2 cache misses were significant, d=2 queries (which visit 8.5x more nodes spread across diverse FST regions) would show measurably higher per-node cost. The 1.07x ratio indicates the working set remains effectively cache-resident even under d=2 workloads.
 
 **Platform note:** `perf stat` is not available on Windows/MSYS2. Hardware counter data (L1/L2 miss rates, instruction counts) would require Intel VTune or Windows ETW. The timing-based analysis above provides equivalent evidence: stable per-node cost across workloads with 8.5x different node visit counts is inconsistent with significant cache miss rates.
+
+## Levenshtein DFA compilation
+
+The Levenshtein DFA mode precompiles a deterministic automaton from the same DP recurrence as Myers' bit-parallel algorithm, but without bitvectors. Each DFA state encodes a single clamped DP column `col[0..m]`, and transitions are computed by applying the standard Levenshtein recurrence for each possible input byte.
+
+### Why a separate Levenshtein DFA?
+
+The existing Damerau DFA already handles Levenshtein as a special case (transpositions never fire if the state doesn't track `prev_char`). However, the Levenshtein DFA has significantly fewer states because it only needs one DP column (no `prev_col`, no `prev_char`). This means:
+
+- **10x cheaper compilation** — Lev DFA compiles in 135 µs at d=1 vs 1,447 µs for Damerau DFA
+- **Smaller transition table** — fewer states means the table fits better in L2 cache
+- **Identical traversal speed** — both use the same O(1) `table[state][byte]` lookup
+
+The Levenshtein DFA shares the same BFS construction, hash-based state deduplication, and backward-reachability pruning as the Damerau DFA, but with a simpler state representation.
+
+## Damerau-Levenshtein via DFA compilation
+
+The Damerau-Levenshtein implementation uses a compiled DFA rather than a bit-parallel NFA. This is necessary because the Damerau-Levenshtein recurrence requires tracking two DP columns (current and previous) plus the previous input character for the transposition check `D[i][j] = D[i-2][j-2] + 1 when query[i-1] == target[j-2] and query[i-2] == target[j-1]`.
+
+### DFA state representation
+
+Each DFA state encodes three components:
+- `prev_col[0..m]` — the previous DP column D(i, j-1)
+- `curr_col[0..m]` — the current DP column D(i, j)
+- `prev_char` — the previous target character
+
+Cell values are clamped to `max_distance + 1` to keep the state space finite. States where both columns are entirely clamped map to a dead absorbing state (state 0).
+
+### DFA construction (BFS enumeration)
+
+The DFA is built by BFS over reachable states. Starting from the initial state (D(i,0) = i), each state is expanded by transitioning on representative input bytes. Equivalence classes reduce the alphabet: each unique query byte is its own class, and all non-query bytes share a single representative (they never trigger transpositions since they don't appear in the query).
+
+For each (state, byte) pair, the next state is computed using the Damerau-Levenshtein DP recurrence with transposition. States are canonicalized via a hash map. The result is a full transition table: `table[state][byte] → next_state`, enabling O(1) per-character lookup during FST traversal.
+
+### Pruning via backward reachability
+
+After DFA construction, a backward BFS from accepting states (where `curr_col[m] <= max_distance`) computes `can_reach_accept` for every state. During FST traversal, states where `can_reach_accept` is false are pruned immediately, avoiding dead subtree exploration.
+
+### Performance characteristics
+
+The DFA traversal is ~2x faster per-node than the bit-parallel Levenshtein NFA because `step()` is a single array index (`table[state][label]`) instead of ~12 bitwise operations. However, DFA compilation is expensive:
+
+| Distance | DFA compile | States | Per-query traversal |
+|----------|-------------|--------|---------------------|
+| d=1 | ~1 ms | ~164 | ~23 µs |
+| d=2 | ~3 ms | ~468 | ~237 µs |
+| d=3 | ~9 ms | ~1,366 | ~1,066 µs |
+
+The transition table size is `states × 256 × 4 bytes`. At d=1 with ~164 states, this is ~164 KB — fits comfortably in L2 cache. At d=3 with ~1,366 states, it grows to ~1.4 MB, which may cause L2 pressure on some architectures.
+
+### Why not bit-parallel Damerau-Levenshtein?
+
+Myers' bit-parallel algorithm encodes a single DP column as two bitvectors (Pv, Mv). The Damerau-Levenshtein recurrence `D[i][j] = D[i-2][j-2] + 1` requires access to the previous column's values two rows back. This cross-column, non-adjacent dependency breaks the single-column bitvector representation.
+
+Extensions exist — Hyyrö 2003 ("A Bit-Vector Algorithm for Computing Levenshtein and Damerau Edit Distances") describes a modification of Myers' algorithm that adds ~5 bit-operations to handle transpositions by carrying the previous column's character match vector. This is a planned addition that would provide zero-startup Damerau-Levenshtein search, but it is not yet implemented. The DFA approach is used in the meantime, trading upfront compilation cost for correct and fast per-node processing.
+
+### Three-mode performance summary
+
+| Mode | Startup | Per-node cost | State size | Best for |
+|------|---------|---------------|------------|----------|
+| Lev BitParallel | 0 | ~22 ns (12 bitwise ops) | 24 bytes (Pv, Mv, dist) | Single-shot, interactive |
+| Lev DFA | 135-3,479 µs | ~10 ns (array lookup) | 4 bytes (state index) | Batch, reuse across indices |
+| Damerau DFA | 1,447-41,501 µs | ~10 ns (array lookup) | 4 bytes (state index) | Transposition-aware search |

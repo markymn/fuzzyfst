@@ -19,14 +19,16 @@ static void usage(const char* prog) {
     std::fprintf(stderr,
         "Usage:\n"
         "  %s build <words.txt> <index.fst>\n"
-        "  %s query <index.fst> <query> [--distance <d>]\n"
+        "  %s query <index.fst> <query> [--distance <d>] [--metric <m>]\n"
         "\n"
         "Commands:\n"
         "  build   Build an FST index from a newline-delimited word list.\n"
         "  query   Fuzzy-search the index for words within edit distance d.\n"
         "\n"
         "Options:\n"
-        "  --distance <d>  Maximum edit distance (default: 1, max: 3).\n",
+        "  --distance <d>    Maximum edit distance (default: 1, max: 3).\n"
+        "  --metric <m>      Distance metric: levenshtein (default) or damerau.\n"
+        "  --algorithm <a>   Algorithm: bit-parallel (default) or dfa.\n",
         prog, prog);
 }
 
@@ -94,7 +96,9 @@ static int cmd_build(const char* words_path, const char* output_path) {
 // ── Query command ───────────────────────────────────────────
 
 static int cmd_query(const char* index_path, const char* query,
-                     uint32_t max_distance) {
+                     uint32_t max_distance,
+                     fuzzyfst::DistanceMetric metric,
+                     fuzzyfst::Algorithm algorithm) {
     auto fst = fuzzyfst::Fst::open(index_path);
     if (!fst.has_value()) {
         std::fprintf(stderr, "Error: cannot open FST '%s' (error %d)\n",
@@ -108,8 +112,9 @@ static int cmd_query(const char* index_path, const char* query,
     char word_buf[65536];
     fuzzyfst::FuzzyResult result_buf[8192];
 
+    fuzzyfst::SearchOptions opts{max_distance, metric, algorithm};
     size_t n = fst->fuzzy_search(
-        query, max_distance,
+        query, opts,
         std::span<fuzzyfst::FuzzyResult>(result_buf, 8192),
         std::span<char>(word_buf, sizeof(word_buf)));
 
@@ -124,7 +129,12 @@ static int cmd_query(const char* index_path, const char* query,
                   return a.word < b.word;
               });
 
-    std::printf("Query: \"%s\" (distance <= %u)\n", query, max_distance);
+    const char* metric_name = (metric == fuzzyfst::DistanceMetric::DamerauLevenshtein)
+                                  ? "Damerau-Levenshtein" : "Levenshtein";
+    const char* algo_name = (algorithm == fuzzyfst::Algorithm::DFA)
+                                ? "DFA" : "BitParallel";
+    std::printf("Query: \"%s\" (distance <= %u, %s, %s)\n",
+                query, max_distance, metric_name, algo_name);
     std::printf("Found %zu results in %.1f us:\n", n, query_us);
 
     for (size_t i = 0; i < n; ++i) {
@@ -165,6 +175,8 @@ int main(int argc, char* argv[]) {
         }
 
         uint32_t distance = 1;
+        auto metric = fuzzyfst::DistanceMetric::Levenshtein;
+        auto algorithm = fuzzyfst::Algorithm::BitParallel;
         for (int i = 4; i < argc; ++i) {
             if (std::strcmp(argv[i], "--distance") == 0 && i + 1 < argc) {
                 distance = static_cast<uint32_t>(std::atoi(argv[++i]));
@@ -173,10 +185,30 @@ int main(int argc, char* argv[]) {
                         "Warning: distance %u > 3 not recommended.\n",
                         distance);
                 }
+            } else if (std::strcmp(argv[i], "--metric") == 0 && i + 1 < argc) {
+                ++i;
+                if (std::strcmp(argv[i], "damerau") == 0) {
+                    metric = fuzzyfst::DistanceMetric::DamerauLevenshtein;
+                } else if (std::strcmp(argv[i], "levenshtein") != 0) {
+                    std::fprintf(stderr,
+                        "Error: unknown metric '%s' (use levenshtein or damerau)\n",
+                        argv[i]);
+                    return 1;
+                }
+            } else if (std::strcmp(argv[i], "--algorithm") == 0 && i + 1 < argc) {
+                ++i;
+                if (std::strcmp(argv[i], "dfa") == 0) {
+                    algorithm = fuzzyfst::Algorithm::DFA;
+                } else if (std::strcmp(argv[i], "bit-parallel") != 0) {
+                    std::fprintf(stderr,
+                        "Error: unknown algorithm '%s' (use bit-parallel or dfa)\n",
+                        argv[i]);
+                    return 1;
+                }
             }
         }
 
-        return cmd_query(argv[2], argv[3], distance);
+        return cmd_query(argv[2], argv[3], distance, metric, algorithm);
     }
 
     std::fprintf(stderr, "Unknown command: %.*s\n",

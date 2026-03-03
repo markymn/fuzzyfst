@@ -54,10 +54,6 @@ private:
     Frame                 stack_[256];
     uint16_t              stack_top_;
     bool                  done_;
-
-    static void read_node(const uint8_t* data, uint32_t offset,
-                          bool& is_final, uint8_t& num_trans,
-                          const uint8_t*& trans_ptr);
 };
 
 }  // namespace internal

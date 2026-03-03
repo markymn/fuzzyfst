@@ -29,6 +29,26 @@ struct FuzzyResult {
     uint32_t         distance;
 };
 
+// Distance metric for fuzzy search.
+enum class DistanceMetric {
+    Levenshtein,          // Standard Levenshtein (insertions, deletions, substitutions)
+    DamerauLevenshtein,   // Damerau-Levenshtein (+ adjacent transpositions)
+};
+
+// Algorithm hint for fuzzy search.
+enum class Algorithm {
+    BitParallel,   // Default — zero startup cost, register-resident state.
+    DFA,           // Precompiled DFA — higher startup cost, faster per-node.
+                   // Best for batch workloads reusing same (query, distance) pair.
+};
+
+// Options for fuzzy_search.
+struct SearchOptions {
+    uint32_t       max_distance = 1;
+    DistanceMetric metric       = DistanceMetric::Levenshtein;
+    Algorithm      algorithm    = Algorithm::BitParallel;
+};
+
 // ── Build API ──────────────────────────────────────────────
 
 struct BuildOptions {
@@ -93,6 +113,17 @@ public:
     [[nodiscard]]
     std::vector<FuzzyResult> fuzzy_search(std::string_view query,
                                            uint32_t max_distance) const;
+
+    // SearchOptions overloads — supports Damerau-Levenshtein metric.
+    [[nodiscard]]
+    size_t fuzzy_search(std::string_view query,
+                        SearchOptions opts,
+                        std::span<FuzzyResult> results,
+                        std::span<char> word_buf) const;
+
+    [[nodiscard]]
+    std::vector<FuzzyResult> fuzzy_search(std::string_view query,
+                                           SearchOptions opts) const;
 
     uint32_t num_nodes() const;
 

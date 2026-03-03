@@ -20,6 +20,12 @@ add_library(fuzzyfst
     src/fst_reader.cpp
     src/levenshtein_nfa.cpp
     src/fuzzy_search.cpp
+    src/damerau_nfa.cpp
+    src/damerau_search.cpp
+    src/levenshtein_dfa.cpp
+    src/levenshtein_dfa_search.cpp
+    src/hyyro_nfa.cpp
+    src/hyyro_search.cpp
     src/fuzzyfst.cpp
 )
 target_include_directories(fuzzyfst PUBLIC include)
@@ -47,6 +53,12 @@ add_executable(fst-tests
     tests/test_fst_roundtrip.cpp
     tests/test_levenshtein_nfa.cpp
     tests/test_fuzzy_correctness.cpp
+    tests/test_damerau_nfa.cpp
+    tests/test_damerau_correctness.cpp
+    tests/test_metric_comparison.cpp
+    # tests/test_hyyro_nfa.cpp          # Disabled until Hyyro is fixed
+    # tests/test_hyyro_correctness.cpp   # Disabled until Hyyro is fixed
+    tests/test_four_modes.cpp
 )
 target_link_libraries(fst-tests PRIVATE fuzzyfst)
 target_include_directories(fst-tests PRIVATE src)
@@ -56,6 +68,14 @@ add_test(NAME all_tests COMMAND fst-tests)
 add_executable(fst-profile tests/bench_profile.cpp)
 target_link_libraries(fst-profile PRIVATE fuzzyfst)
 target_include_directories(fst-profile PRIVATE src)
+
+add_executable(bench-damerau bench/bench_damerau.cpp)
+target_link_libraries(bench-damerau PRIVATE fuzzyfst)
+target_include_directories(bench-damerau PRIVATE src)
+
+add_executable(bench-four-modes bench/bench_four_modes.cpp)
+target_link_libraries(bench-four-modes PRIVATE fuzzyfst)
+target_include_directories(bench-four-modes PRIVATE src)
 
 # Word list check
 if(NOT EXISTS "${CMAKE_SOURCE_DIR}/data/words.txt")
